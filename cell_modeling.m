@@ -1,9 +1,9 @@
-% cell_modeling.m
+%% cell_modeling.m
+% Author: Aadith Vittala
 % Rewriting code from Darlington et al., Nat. Comm. 2018
 % Simulate metabolic, translational, transcriptional, and orthogonal ribosomal processes 
 
-%% Plot any given variable for each of the four systems
-% Key to the variables:
+%% Key to the variables:
 % Access as Y(:, #), where # is the number
 % 1 = internalized substrate
 % 2 = cell energy
@@ -12,10 +12,32 @@
 % 8 = host rRNA
 % 9-12 = loaded ribosomes for transport enzymes, substrate-energy conversion enzymes,  other host proteins, and host ribosomal proteins respectively
 % 13-16 = actual proteins for transport enzymes, substrate-energy conversion enzymes,  other host proteins, and host ribosomal proteins respectively
-% 17 = host ribosomes
+% 17 = host ribosomes (composed of host rRNA and host ribosomal proteins)
 % 18-20 = circuit mRNA, loaded ribosomes, and proteins respectively
-% 21 = 16S rRNA (orthogonal rRNA)
-% 22 = orthogonal ribosomes
+% 18/21 = 16S rRNA (orthogonal rRNA) (smaller # if "oribo", larger # if "both")
+% 19/22 = orthogonal ribosomes (smaller # if "oribo", larger # if "both")
+
+%% Key to the parameters:
+% Access as P(:,#), where # is a number
+% 1 = external substrate
+% 2 = energy conversion efficiency
+% 3-4 = max rate of nutrient import, energy conversion
+% 5-6 = M-M constants for nutrient import, energy conversion
+% 7-11 = max transcription for import proteins, conversion proteins, other host proteins, ribosomal proteins, and host rRNA
+% 12-16 = transcription energy threshold for import proteins, conversion proteins, other host proteins, ribosomal proteins, and host rRNA
+% 17 = regulatory transcription threshold for other host proteins
+% 18 = regulatory Hill constant for transcription of other host proteins
+% 19-20 = mRNA and host rRNA decay rates
+% 21-25 = RNA-ribosome binding rates for import proteins, conversion proteins, other host proteins, ribosomal proteins, and host rRNA
+% 26-30 = RNA-ribosome unbinding rates for import proteins, conversion proteins, other host proteins, ribosomal proteins, and host rRNA
+% 31 = protein decay rate
+% 32-35 = lengths in AA for import proteins, conversion proteins, other host proteins, and ribosomal proteins
+% 36 = max elongation rate
+% 37 = elongation energy threshold
+% 38 = proteome size
+% 39-43 = max transcription, transcription energy threshold, RNA-ribosome binding, RNA-ribosome unbinding, and length in AA for circuit protein
+% 39-43/44-48 = max transcription, transcription energy threshold, RNA-ribosome binding, RNA-ribosome unbinding, and rRNA decay rate for 16S rRNA
+% for the last one, smaller #s if "oribo", larger #s if "both"
 
 
 %% Key to the functions:
@@ -23,17 +45,14 @@
 % Use "circuit" for including the circuit, "oribo" for including the orthogonal ribosomes and "both" for both
 % cell"..."ODE(T,Y,P) returns the derivatives with respect to time for each of the variables as an array dY. 
 % Fill in "..." with whatever type of ODE you want to simulate.
+% runAfterSteadyState("...", #) runs plainODE til steady-state, adds in other variables/parametersfor ODE "...", and runs until t = #. 
+
 %% Quick run how-to:
 % To just run the ODE, do the following and replace "..." with the ODE you want to simulate:
-% [P,Y] = initialize("...");
-% odeoptions = odeset('NonNegative',[1:length(Y)]);
-% [T,Y] = ode15s(@(T,Y) cell"..."ODE(T,Y,P), [0 2000], Y, odeoptions);
+% [T,Y] = runAfterSteadyState("...", 100)
 % Note here that:
-% [0 2000] is the time frame you want to simulate over
-% T is an array representing time
+% T is an array representing time; in this case it runs from 0 to 100
 % Y represents your variables
-% P holds your parameters.
-% odeoptions ensures that the variables are > 0
 
 
 clear all; close all; %Clear the screen
@@ -41,18 +60,21 @@ clear all; close all; %Clear the screen
 %% Shows behavior when new circuit/o-ribosomes introduced into bacteria currently at equilibrium
 fplot = figure;
 figure(fplot.Number); hold('on');
-%set(gca, 'YScale', 'log')
-[T,Y] = runAfterSteadyState("circuit"); % run the ODE after reaching steady state with cellplainODE()
-for i = 18:19
-    plot(T,Y(:,i))
+set(gca, 'YScale', 'log')
+[T,Y] = runAfterSteadyState("both",1000); % run the ODE after reaching steady state with cellplainODE()
+for i = 1:2
+    plot(T,Y(:,i),'-*', 'MarkerIndices', 1) % when plotting, mark the first point with a star
+end
+%Don't plot cell growth (Y(:,3)) because it grows exponentially
+for i = 4:17
+    plot(T,Y(:,i),'-*', 'MarkerIndices', 1) % when plotting, mark the first point with a star
 end
 
-
-function [P,Y] = initialize(options)
+function [P,Y] = initialize(type)
     %% initialize(options):
     %   Initializes all the numbers necessary for the model; P contains
     %   all parameters while Y contains all variables
-    %   Arguments "options" describes what to add ("circuit" or "ortho" or "both")
+    %   Arguments "type" describes what to add ("circuit" or "ortho" or "both")
     
     %% Constants related to energy
     s_e = 1e4; % external substrate source
@@ -73,7 +95,7 @@ function [P,Y] = initialize(options)
     o_H = 4.38; % transcription energy threshold for other host genes
     o_R = 426.87; % transcription energy threshold for ribosome genes
     o_r = 426.87; % transcription energy threshold for rRNA genes
-    k_H = 152219; % other host protein transcription threshold
+    k_H = 152219; % other host protein regulatory transcription threshold
     h_H = 4; % other host protein transcription Hill constant
     d_m = 0.1; % mRNA degradation rate
     d_r = 0.1; % rRNA degradation rate
@@ -102,7 +124,7 @@ function [P,Y] = initialize(options)
     P = [s_e;phi_e;v_T;v_E;k_T;k_E;w_T;w_E;w_H;w_R;w_r;o_T;o_E;o_H;o_R;o_r;k_H;h_H;d_m;d_r;b_T;...
         b_E;b_H;b_R;b_r;u_T;u_E;u_H;u_R;u_r;d_p;n_T;n_E;n_H;n_R;gamma_max;k_gamma;M_proteome];
     
-    if options == "circuit" % Add circuit constants if necessary
+    if type == "circuit" % Add circuit constants if necessary
         %% Constants related to circuit genes
         w_Y = 100; % max circuit genes transcription - selected at random/may vary
         o_Y = 4.38; % transcription energy threshold for circuit genes
@@ -112,17 +134,17 @@ function [P,Y] = initialize(options)
         P = [P;w_Y;o_Y;b_Y;u_Y;n_Y];
     end
     
-    if options == "oribo" % Add orthogonal ribosome constants if necessary
+    if type == "oribo" % Add orthogonal ribosome constants if necessary
         %% Constants related to orthogonal ribosome genes
-        w_O = 350; % max 16S rRNA genes transcription - selected at random/may vary
+        w_O = 50; % max 16S rRNA genes transcription - selected at random/may vary
         o_O = 4.38; % transcription energy threshold for circuit genes
         b_O = 1; % mRNA-ribosome binding rate
         u_O = 1; % mRNA-ribosome binding rate
-        d_O = 0.1; % length of circuit proteins
+        d_O = 0.1; % decay rate of 16S rRNA
         P = [P;w_O;o_O;b_O;u_O;d_O];
     end
     
-    if options == "both" % Add both
+    if type == "both" % Add both
         %% Constants related to circuit genes
         w_Y = 100; % max circuit genes transcription - selected at random/may vary
         o_Y = 4.38; % transcription energy threshold for circuit genes
@@ -130,7 +152,7 @@ function [P,Y] = initialize(options)
         u_Y = 1; % mRNA-ribosome binding rate
         n_Y = 300; % length of circuit proteins
         %% Constants related to orthogonal ribosome genes
-        w_O = 350; % max 16S rRNA genes transcription - selected at random/may vary
+        w_O = 50; % max 16S rRNA genes transcription - selected at random/may vary
         o_O = 4.38; % transcription energy threshold for circuit genes
         b_O = 1; % mRNA-ribosome binding rate
         u_O = 1; % mRNA-ribosome binding rate
@@ -141,7 +163,7 @@ function [P,Y] = initialize(options)
     %% Variables related to energy/growth
     s_i = 1000; % internalized substrate
     E_cell = 1000; % cellular energy
-    N_cell = 0; % total growth (integral of growth rate)
+    N_cell = 1; % total growth (exponential dependence on lambda)
 
     %% Variables related to mRNAs
     m_T = 10; % mRNAs for substrate transport enzymes
@@ -164,27 +186,27 @@ function [P,Y] = initialize(options)
     %% Package all variables into a single array to use matlab stiff differential equation solver (ode15s)
     Y = [s_i; E_cell; N_cell; m_T; m_E; m_H; m_R; r_R; c_T; c_E; c_H; c_R; p_T; p_E; p_H; p_R; R_h];
     
-    if options == "circuit" % Add circuit variables if necessary
+    if type == "circuit" % Add circuit variables if necessary
         %% Variables for circuit genes
         m_Y = 0; % mRNAs for circuit genes
         c_Y = 0; % translation complexes for circuit genes
         p_Y = 0; % circuit proteins
         Y = [Y;m_Y;c_Y;p_Y];
     end
-    if options == "oribo" % Add orthogonal ribosome variables if necessary
+    if type == "oribo" % Add orthogonal ribosome variables if necessary
         %% Variables for circuit genes
         r_O = 0; % 16S rRNA for orthogonal ribosomes
-        R_O = 0; % functional orthogonal ribosomes
+        R_O = 10; % functional orthogonal ribosomes
         Y = [Y;r_O;R_O];
     end
-    if options == "both" % Add circuit variables if necessary
+    if type == "both" % Add circuit variables if necessary
         %% Variables for circuit genes
         m_Y = 0; % mRNAs for circuit genes
         c_Y = 0; % translation complexes for circuit genes
         p_Y = 0; % circuit proteins
         %% Variables for orthogonal ribosome genes
         r_O = 0; % 16S rRNA for orthogonal ribosomes
-        R_O = 0; % functional orthogonal ribosomes
+        R_O = 10; % functional orthogonal ribosomes
         Y = [Y;m_Y;c_Y;p_Y;r_O;R_O];
     end
 end
@@ -217,7 +239,7 @@ function dY = cellplainODE(T,Y,P)
     %% Determine rate of change for energy/growth variables
     ds_i = v_T*p_T*s_e/(k_T+s_e) - v_E*p_E*s_i/(k_E+s_i) - lambda*s_i; % Supp. eqn 1
     dE_cell = phi_e*v_E*p_E*s_i/(k_E+s_i) - gamma*(c_T+c_E+c_H+c_R) - lambda*E_cell; % Supp. eqn 2, with simplification
-    dN_cell = lambda;
+    dN_cell = lambda*N_cell;
     
     %% Determine rate of change for mRNA variables
     dm_T = w_T*E_cell/(E_cell+o_T) + gamma*c_T/n_T - b_T*R_h*m_T + u_T*c_T - (d_m+lambda)*m_T; % Supp. eqn 4, with simplification and sign change on last term
@@ -273,7 +295,7 @@ function dY = cellcircuitODE(T,Y,P)
     %% Determine rate of change for energy/growth variables
     ds_i = v_T*p_T*s_e/(k_T+s_e) - v_E*p_E*s_i/(k_E+s_i) - lambda*s_i; % Supp. eqn 1
     dE_cell = phi_e*v_E*p_E*s_i/(k_E+s_i) - gamma*(c_T+c_E+c_H+c_R+c_Y) - lambda*E_cell; % Supp. eqn 12, with simplification
-    dN_cell = lambda;
+    dN_cell = lambda*N_cell;
     
     %% Determine rate of change for mRNA variables
     dm_T = w_T*E_cell/(E_cell+o_T) + gamma*c_T/n_T - b_T*R_h*m_T + u_T*c_T - (d_m+lambda)*m_T; % Supp. eqn 4, with simplification and sign change on last term
@@ -330,7 +352,7 @@ function dY = celloriboODE(T,Y,P)
     %% Determine rate of change for energy/growth variables
     ds_i = v_T*p_T*s_e/(k_T+s_e) - v_E*p_E*s_i/(k_E+s_i) - lambda*s_i; % Supp. eqn 1
     dE_cell = phi_e*v_E*p_E*s_i/(k_E+s_i) - gamma*(c_T+c_E+c_H+c_R) - lambda*E_cell; % Supp. eqn 2, with simplification
-    dN_cell = lambda;
+    dN_cell = lambda*N_cell;
     
     %% Determine rate of change for mRNA variables
     dm_T = w_T*E_cell/(E_cell+o_T) + gamma*c_T/n_T - b_T*R_h*m_T + u_T*c_T - (d_m+lambda)*m_T; % Supp. eqn 4, with simplification and sign change on last term
@@ -389,7 +411,7 @@ function dY = cellbothODE(T,Y,P)
     %% Determine rate of change for energy/growth variables
     ds_i = v_T*p_T*s_e/(k_T+s_e) - v_E*p_E*s_i/(k_E+s_i) - lambda*s_i; % Supp. eqn 1
     dE_cell = phi_e*v_E*p_E*s_i/(k_E+s_i) - gamma*(c_T+c_E+c_H+c_R+c_Y) - lambda*E_cell; % Supp. eqn 12, with simplification
-    dN_cell = lambda;
+    dN_cell = lambda*N_cell;
     
     %% Determine rate of change for mRNA variables
     dm_T = w_T*E_cell/(E_cell+o_T) + gamma*c_T/n_T - b_T*R_h*m_T + u_T*c_T - (d_m+lambda)*m_T; % Supp. eqn 4, with simplification and sign change on last term
@@ -443,12 +465,14 @@ function Yf = runToSteadyState()
     Yf = Y(end,:); % Return final values of variables after steady-state reached
 end
 
-function [T,Y] = runAfterSteadyState(options)
-    %% Initialize and run cellplainODE() to get steady state in the absence of other genes.
-    %% Then, run the ODE described in options ("circuit"/"oribo"/"both") and output the results.
-    [P,Y] = initialize(options); % Initialize variables/parameters
+function [T,Y] = runAfterSteadyState(type, tmax)
+    %% runAfterSteadyState(options,tmax)
+    % Initialize and run cellplainODE() to get steady state in the absence of other genes.
+    % Then, run the ODE described in type ("circuit"/"oribo"/"both") and output the results.
+    % tmax gives the maximum time to run till
+    [P,Y] = initialize(type); % Initialize variables/parameters
     Yf = runToSteadyState(); % Run until steady state and use as initial condition
-    switch options
+    switch type
         case "circuit"
             ODE = @cellcircuitODE;
         case "oribo"
@@ -462,12 +486,5 @@ function [T,Y] = runAfterSteadyState(options)
         Yf = [Yf Y(i)];
     end
     odeoptions = odeset('NonNegative',[1:length(Yf)]);
-    [T,Y] = ode15s(@(T,Y) ODE(T,Y,P), [0 2000], Yf, odeoptions); % Run the correct ODE
+    [T,Y] = ode15s(@(T,Y) ODE(T,Y,P), [0 tmax], Yf, odeoptions); % Run the correct ODE
 end
-
-
-
-
-
-
-
