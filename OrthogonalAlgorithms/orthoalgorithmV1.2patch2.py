@@ -1,3 +1,5 @@
+
+
 # orthoribalalgorithm.py
 # Determine Shine Dalgarno (SD) and Anti-Shine Dalgarno sequences for strains of bacteria to design orthogonal ribosomes
 # Rice University iGEM 2018
@@ -9,17 +11,33 @@
 # -------------------------------- Initialize library --------------------------------------------------
 
 
-def libbuild():
+def libbuild(ending):  # need to change to work with all other strains
     """
     Read the initial library of 4096 pairs from a InitialLibrary file, including
     all possible combinations from randomizing 6 bases in the SD/ASD region.
     Additionally, formats the initial dictionary so that the first SD has the key "SD1", and so on.
     :return: The initial dictionary containing all possible SD/ASD sequences
     """
-    import pickle
-    pickle_in = open("InitialLibrary", "rb")
-    IniLibrary = pickle.load(pickle_in)
-    # print('4096 pairs are: ', Libdict)
+
+    # Build a library of 4096 pairs
+    Lib = []
+    basecode = ['A','U','C','G']
+    for b1 in range(1, 5):
+        for b2 in range(1, 5):
+            for b3 in range(1, 5):
+                for b4 in range(1, 5):
+                    for b5 in range(1, 5):
+                        for b6 in range(1, 5):
+                            seqcode = str(b1) + str(b2) + str(b3) + str(b4) + str(b5) + str(b6)
+                            SDseq = basecode[int(seqcode[0])-1] + basecode[int(seqcode[1])-1] + basecode[int(seqcode[2])-1] + basecode[int(seqcode[3])-1] + basecode[int(seqcode[4])-1] + basecode[int(seqcode[5])-1]
+                            ASDseq = 'AUCA' + revcomp(SDseq) + ending
+                            Lib.append([SDseq, ASDseq])
+    Libdict = {}
+    for x in range(0, 4096):
+        pair = Lib[x]
+        Libdict['SD{0}'.format(x + 1)] = pair[0]
+        Libdict['ASD{0}'.format(x + 1)] = pair[1]
+    return Libdict
     return IniLibrary
 
 
@@ -47,6 +65,20 @@ def revcomp(sequence):
     for letter in sequence_list:
         revcompseq += complement[letter.upper()]
     return revcompseq
+
+
+def getSD(rRNA,ending):
+    """
+    :param rRNA: the 16s rRNA sequence
+    :param ending: the ending of the ASD region (either "UA" or "UU")
+    :return:
+    """
+    import re
+    for pseudoindex in re.finditer('AUCA', rRNA):
+        if rRNA[pseudoindex.start() + 10:pseudoindex.start() + 12] == ending:  # need to change to work with UU strain
+            index = int(pseudoindex.start())
+    SDsequence = revcomp(rRNA[index + 4:index + 10])
+    return [SDsequence, index]
 
 
 def revcompDNA(sequence):
@@ -177,7 +209,7 @@ def formatCDSfile(CDSfile, nameoforganism, path):
                             line.replace(')]', 'ss', 1).find(')]')
                             line = line[0: idx2 + 1] + '\n'
                             formatted.write(line)
-                    elif currentandprevious[idx1 + 9] == 'j': # Join cases are ignored
+                    elif currentandprevious[idx1 + 9] == 'j':  # Join cases are ignored
                         pass
                     else:
                         idx2 = line.find('..')
@@ -215,7 +247,7 @@ def findCDSfromformatted(filepath):
                         pass
                     else:
                         idx2_1 = line.find(')]\n')
-                        cdslist2.append(int(line[idx2 + 2: idx2_1-1]) - 1)  # -1 to account for Python indexing
+                        cdslist2.append(int(line[idx2 + 2: idx2_1 - 1]) - 1)  # -1 to account for Python indexing
                         pass
                 else:
                     cdslist1.append(int(line[idx1 + 10: idx2]) - 1)
@@ -255,7 +287,7 @@ def getallTIRs(CDSfile, genome, nameoforganism, path):
             # CDS that overlap over two lines
             if i < len(cdslist1):
                 idx3 = cdslist1[i] - index
-                if idx3 > len(line)-4:  # 66
+                if idx3 > len(line) - 4:  # 66
                     # this is the case when the end 3 bps overlap into the next line or we haven't yet reached
                     # the line of the CDS yet
                     previousline = line
@@ -265,7 +297,7 @@ def getallTIRs(CDSfile, genome, nameoforganism, path):
                 else:
                     # here we have the case when we already passed the start of this TIR, so we have to go back to the
                     # previous line
-                    a = convertTtoU(currentandprevious[idx3 + (len(line)-21):idx3 + len(line)+3]) #49, 73
+                    a = convertTtoU(currentandprevious[idx3 + (len(line) - 21):idx3 + len(line) + 3])  # 49, 73
 
                     TIRdict['TIR' + str(i + 1)] = a  # 59 to 73
                     i = i + 1
@@ -286,7 +318,7 @@ def getallTIRs(CDSfile, genome, nameoforganism, path):
             # CDS that overlap over two lines
             if i < len(cdslist2):
                 idx3 = cdslist2[i] - index
-                if idx3 > len(line)-21:
+                if idx3 > len(line) - 21:
                     # this is the case when the end 3 bps overlap into the next line or we haven't yet reached
                     # the line of the CDS yet
                     previousline = line.rstrip()
@@ -295,7 +327,7 @@ def getallTIRs(CDSfile, genome, nameoforganism, path):
                 else:
                     # here we have the case when we already passed the start of this TIR, so we have to go back to the
                     # previous line
-                    a = convertTtoU(revcompDNA(currentandprevious[idx3 + (len(line)-2):idx3 + (len(line)+22)]))
+                    a = convertTtoU(revcompDNA(currentandprevious[idx3 + (len(line) - 2):idx3 + (len(line) + 22)]))
                     TIRdict['TIR' + str(i + 1 + j)] = a
                     i = i + 1
                     previousline = line.rstrip()
@@ -304,31 +336,32 @@ def getallTIRs(CDSfile, genome, nameoforganism, path):
     return TIRdict
 
 
-def secstructurelib(Library):
+def secstructurelib(Library,filename,start16sseq,stop16sseq,ending):
     """
     Build a library of secondary structure of 16s rRNA corresponding to a given library of ASD and SD sequence.
     :param Library: The library of ASD SD sequence
     :return: A library containing secondary structure of rRNA with each ASD
     """
-    full16srRNAseq = get16srRNAseq()
+    full16srRNAseq = get16srRNAseq(filename,start16sseq,stop16sseq)
     NewLib = {}
+    index = getSD(full16srRNAseq,ending)[1]
     for n in range(0, int(len(Library) / 2)):
-        full16srRNAseq = full16srRNAseq[0:-12] + Library['ASD{0}'.format(n + 1)]
+        full16srRNAseq = full16srRNAseq[0:index] + Library['ASD{0}'.format(n + 1)] + full16srRNAseq[index+12:]
         secstructure = RNAfoldcentroidseq(full16srRNAseq)
         NewLib['foldedseq{0}'.format(n + 1)] = str(secstructure)
     return NewLib
 
 
-def get16srRNAseq():
+def get16srRNAseq(filename,start16sseq,stop16sseq):
     """
     Get the full 16s rRNA sequence from the genome
     :return: the full 16s rRNA sequence from the genome
     """
     import os
-    filepath = os.path.join(os.path.dirname(__file__), "ecoligenome.txt")
+    filepath = os.path.join(os.path.dirname(__file__), filename)
     with open(filepath, 'r') as myfile:  # determine rRNA sequence
         data = myfile.read().replace('\n', '')
-    full16srRNAseq = convertTtoU(data[4166658:4168200])
+    full16srRNAseq = convertTtoU(data[start16sseq-1:stop16sseq])
     return full16srRNAseq
 
 
@@ -348,7 +381,7 @@ class Library:
 
     # -----------------------------------------Steps 2-3----------------------------------------------------------------
 
-    def narrow_binding(self):
+    def narrow_binding(self,filename,start16sseq,stop16sseq,ending):
         """
         Input the wildtype ASD and SD, output is the narrowed library with pairs that fall within 0.5 kcal range of the
         wildtype binding energy
@@ -357,10 +390,10 @@ class Library:
         :return: The narrowed dictionary with updated key indices only consisting of ASD/ SD pairs that have binding
         energies of -0.5 <= x <= 0.5
         """
-        full16srRNAseq = get16srRNAseq()
+        rRNA = get16srRNAseq(filename,start16sseq,stop16sseq)
 
-        WtASD = full16srRNAseq[-12:]
-        WtSD = revcomp(WtASD[4:10])
+        WtSD = getSD(rRNA,ending)[0]
+        WtASD = "AUCA" + revcomp(WtSD) + "ending"   
         Wildval = RNAduplexval(WtASD, WtSD)  # Calculate the binding energies of Wild-type ASD/SD pair
         # self.library is the initial library after step 1
         for n in range(0, 4096):
@@ -377,15 +410,15 @@ class Library:
 
     # -------------------------------Steps 4-5--------------------------
 
-    def narrow_crossbinding(self):
+    def narrow_crossbinding(self,filename,start16sseq,stop16sseq,ending):
         """
         Narrow down the library more by eliminating pairs with ASD that has < 1 kcal/mol binding energy with
         wild type SD
         :param rRNA: The rRNA sequence in string form.
         :return: Further narrowed dictionary.
         """
-        rRNA = get16srRNAseq()
-        WtSD = revcomp(rRNA[1534:1540])
+        rRNA = get16srRNAseq(filename,start16sseq,stop16sseq)
+        WtSD = getSD(rRNA,ending)[0]
         for n in range(0, int(len(self.library) / 2)):
             ASD = 'ASD' + str(n + 1)
             SD = 'SD' + str(n + 1)
@@ -398,19 +431,19 @@ class Library:
 
     # --------------------------Steps 6-7-----------------------------------
 
-    def ASD_2rystructure_narrow(self):
+    def ASD_2rystructure_narrow(self,filename,start16sseq,stop16sseq,ending):
         """ Narrow down the library by discarding sequences that forms secondary structure in ASD region
          Import the most narrowed Libdict up to step 5 as well as the secondary structure dictionary.
          :param full16srRNAseq: The rRNA sequence in string form.
          :return: The narrowed dictionary of ASD/ SD that do not have secondary structure in the ASD region.
          """
 
-        full16srRNAseq = get16srRNAseq()
-        secstructureseqlib = secstructurelib(self.library)
+        full16srRNAseq = get16srRNAseq(filename,start16sseq,stop16sseq)
+        secstructureseqlib = secstructurelib(self.library,filename,start16sseq,stop16sseq,ending)
         # Locate the index of the first bp of the ASD for all 16S rRNA sequences
         import re
         for pseudoindex in re.finditer('AUCA', full16srRNAseq):
-            if full16srRNAseq[pseudoindex.start() + 10:pseudoindex.start() + 12] == 'UA':
+            if full16srRNAseq[pseudoindex.start() + 10:pseudoindex.start() + 12] == ending:
                 index = int(pseudoindex.start())
         """Iterate through the whole secondary structure dictionary, locating a constant positioned
         ASD and determining whether there is secondary structure in that ASD"""
@@ -429,7 +462,7 @@ class Library:
 
     # ---------------------------------Steps 8-10-----------------------------------------------------
 
-    def allASDTIRpairs(self):
+    def allASDTIRpairs(self, CDSfile, genome, nameoforganism, path):
         """
         Iterate through all possible ASD TIR pairs and find the ones with the highest average binding energies with host
         TIRs
@@ -438,9 +471,7 @@ class Library:
         TIRs)
         :return: Prints the list of the top ten ASD candidates.
         """
-        TIRdict = getallTIRs('C:\\Users\siddu\Desktop\Python Code\E coli K-12 MG1655 CDSs.txt',
-                     'C:\\Users\siddu\Desktop\Python Code\ecoligenome.txt',
-                     'E coli', 'C:/users/siddu/Desktop/Python Code/')
+        TIRdict = getallTIRs(CDSfile, genome, nameoforganism, path)
         dictofvals = {}
         print("Number of TIRs: " + str(len(TIRdict)))
         listofaverages = []
@@ -465,12 +496,79 @@ class Library:
         for i in range(0, 10):
             print(self.library[str(dictofvals[listofaverages[i]])])
 
-
 # ------------------------ Create the E. coli instance and run all the steps on it----------------------
-initiallib = libbuild()  # Create the initial library, this will be replaced by a function that just reads the inital
-# library from a file
-ecolistrain = Library(initiallib)  # Create the E. coli instance.
-ecolistrain.narrow_binding()  # Step 3
-ecolistrain.narrow_crossbinding()  # Step 5
-ecolistrain.ASD_2rystructure_narrow()  # Step 7
-ecolistrain.allASDTIRpairs()  # Last step
+## 1542 bp long 16s rRNA, position 4,166,659 -> 4,168,200, ASD ends with UA, postion of ASD from 1535-1540
+import pickle
+import os
+CDSfile = os.path.join(os.path.dirname(__file__), "E coli K-12 MG1655 CDSs.fasta.txt")
+genome = os.path.join(os.path.dirname(__file__), "E coli K-12 MG1655 genome.fasta.txt")
+nameoforganism = 'E. Coli'
+path = os.path.dirname(__file__)
+start = 4166659
+end = 4168200
+ending = "UA"
+initiallib = libbuild(ending)
+ecolistrain = Library(initiallib) #create the E. Coli instance.
+ecolistrain.narrow_binding(genome,start,end,ending)
+ecolistrain.narrow_crossbinding(genome,start,end,ending)
+ecolistrain.ASD_2rystructure_narrow(genome,start,end,ending)
+#pickle.dump(ecolistrain, open("E.coli after step 7 ASD-SD lists.p",'wb'))
+ecolistrain.allASDTIRpairs(CDSfile, genome, nameoforganism, path)
+
+# ------------------------ Create the P. Putida instance and run all the steps on it----------------------
+## 1522 bp long 16s rRNA, position 2,548,690 -> 2,550,211, ASD ends with UA
+import os
+CDSfile = os.path.join(os.path.dirname(__file__), "Pseudomonas putida KT2440 (g-proteobacteria) CDS.txt")
+genome = os.path.join(os.path.dirname(__file__), "Pseudomonas putida KT2440 (g-proteobacteria) genome.txt")
+nameoforganism = 'P. Putida'
+path = os.path.dirname(__file__)
+start = 2548690
+end = 2550211
+ending = "UA"
+initiallib = libbuild(ending)
+pputidastrain = Library(initiallib) #create the Pneudomonas Putida instance.
+pputidastrain.narrow_binding(genome,start,end,ending)
+pputidastrain.narrow_crossbinding(genome,start,end,ending)
+pputidastrain.ASD_2rystructure_narrow(genome,start,end,ending)
+#pickle.dump(pputidastrain, open("P. Putida after step 7 ASD-SD lists.p",'wb'))
+pputidastrain.allASDTIRpairs(CDSfile, genome, nameoforganism, path)
+
+# ------------------------ Create the L. Lactis instance and run all the steps on it----------------------
+## 1548 bp long 16s rRNA, position 537,561 -> 539,108, ASD ends with UU
+import os
+CDSfile = os.path.join(os.path.dirname(__file__), "Lactococcus lactis subsp. lactis Il1403 (firmicutes) CDS.txt")
+genome = os.path.join(os.path.dirname(__file__), "Lactococcus lactis subsp. lactis Il1403 (firmicutes) genome.txt")
+nameoforganism = 'L. Lactis'
+path = os.path.dirname(__file__)
+start = 537561
+end = 539108
+ending = "UU"
+initiallib = libbuild(ending)
+llactisstrain = Library(initiallib) #create the L. Lactis instance.
+llactisstrain.narrow_binding(genome,start,end,ending)
+llactisstrain.narrow_crossbinding(genome,start,end,ending)
+llactisstrain.ASD_2rystructure_narrow(genome,start,end,ending)
+#pickle.dump(llactisstrain, open("L. Lactis after step 7 ASD-SD lists.p",'wb'))
+llactisstrain.allASDTIRpairs(CDSfile, genome, nameoforganism, path)
+
+# ------------------------ Create the B. Subtilis instance and run all the steps on it----------------------
+## 1555 bp long 16s rRNA, position 9,810 -> 11,364, ASD ends with UU
+import os
+CDSfile = os.path.join(os.path.dirname(__file__), "Bacillus subtilis str. 168 CDS.txt")
+genome = os.path.join(os.path.dirname(__file__), "Bacillus subtilis str. 168 genome.txt")
+nameoforganism = 'B. Subtilis'
+path = os.path.dirname(__file__)
+start = 9810
+end = 11364
+ending = "UU"
+initiallib = libbuild(ending)
+bsubtilisstrain = Library(initiallib) #create the B. Subtilis instance.
+bsubtilisstrain.narrow_binding(genome,start,end,ending)
+bsubtilisstrain.narrow_crossbinding(genome,start,end,ending)
+bsubtilisstrain.ASD_2rystructure_narrow(genome,start,end,ending)
+#pickle.dump(bsubtilisstrain, open("B. Subtilis after step 7 ASD-SD lists.p",'wb'))
+bsubtilisstrain.allASDTIRpairs(CDSfile, genome, nameoforganism, path)
+
+
+
+
