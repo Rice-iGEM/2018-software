@@ -215,7 +215,12 @@ def findCDSfromformatted(filepath):
                         pass
                     else:
                         idx2_1 = line.find(')]\n')
-                        cdslist2.append(int(line[idx2 + 2: idx2_1-1]) - 1)  # -1 to account for Python indexing
+                        try:
+                            int(line[idx2 + 2: idx2_1-1]) - 1
+                        except ValueError:
+                            print('This CDS location was not used' + (line[idx2 + 2: idx2_1-1]) - 1)
+                            pass
+                        cdslist2.append(int(line[idx2 + 2: idx2_1 - 1]) - 1)  # -1 to account for Python indexing
                         pass
                 else:
                     cdslist1.append(int(line[idx1 + 10: idx2]) - 1)
